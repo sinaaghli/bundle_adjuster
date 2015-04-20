@@ -22,5 +22,5 @@ This library gives a batch solution of bundle adjustment problem given a set of 
 
 ##How to run the application
 - in order to run the LadyBugDataset with ceres BAL do
-  -- ./bundle_adjuster -dataset <path to your project folder>bundle_adjuster/dataset1.txt
-  -- ex. ./bundle_adjuster -dataset /Users/sina/code/bundle_adjuster/dataset1.txt
+  * ./bundle_adjuster -dataset <path to your project folder>bundle_adjuster/dataset1.txt
+  * ex. ./bundle_adjuster -dataset /Users/sina/code/bundle_adjuster/dataset1.txt
