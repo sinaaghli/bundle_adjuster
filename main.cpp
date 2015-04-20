@@ -236,6 +236,7 @@ int main(int argc, char** argv) {
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
         std::cout << summary.FullReport() << std::endl;
+
         return 0;
 
       } else {
