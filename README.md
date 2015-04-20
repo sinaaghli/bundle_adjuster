@@ -2,14 +2,14 @@
 This library gives a batch solution of bundle adjustment problem given a set of camera poses, camera interinsics and set of matched features between images
 
 ##Dependencies:
-- cerese_solver
-- Cmake
-- Eigen3
-- Sophus
+- [cerese_solver](https://github.com/ceres-solver/ceres-solver)
+- Eigen
+- [Sophus](https://github.com/arpg/Sophus)
 - Opencv
-- Pangolin
-- SceneGraph
-- Calibu
+- [Pangolin](https://github.com/arpg/Pangolin)
+- [SceneGraph](https://github.com/arpg/SceneGraph)
+- [Calibu](https://github.com/arpg/Calibu)
+- [HAL](https://github.com/arpg/HAL)
 
 ##Commands to clone and install
 - cd <into the directory you put your code>
