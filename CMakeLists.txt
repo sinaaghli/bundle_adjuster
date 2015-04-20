@@ -14,8 +14,11 @@ find_package(HAL 0.1 REQUIRED)
 find_package(Pangolin 0.1 REQUIRED)
 find_package(SceneGraph 0.1 REQUIRED)
 find_package(Calibu 0.1 REQUIRED)
+find_package(Ceres REQUIRED)
 
+include_directories(${CERES_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIR})
+#include_directories(${EIGEN_INCLUDE_DIR})
 include_directories(${HAL_INCLUDE_DIRS})
 include_directories(${Sophus_INCLUDE_DIR})
 include_directories(${OpenCV2_INCLUDE_DIR})
@@ -30,7 +33,7 @@ set(HDRS
         ColorPalette.h
         GLVarHistory.h
         TimerView.h
-        Timer.h
+        BALProblem.h
    )
 
 set(SRCS
@@ -48,3 +51,4 @@ target_link_libraries(bundle_adjuster ${OpenCV2_LIBRARIES})
 target_link_libraries(bundle_adjuster ${Pangolin_LIBRARIES})
 target_link_libraries(bundle_adjuster ${SceneGraph_LIBRARIES})
 target_link_libraries(bundle_adjuster ${Calibu_LIBRARIES})
+target_link_libraries(bundle_adjuster ${CERES_LIBRARIES})
