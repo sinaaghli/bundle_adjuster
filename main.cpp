@@ -1,3 +1,7 @@
+/*
+ * Command Argument Example is : -poses /Users/Sina/rpg/datasets/poses.txt
+ */
+
 #include <unistd.h>
 #include <deque>
 #include <fstream>
@@ -41,21 +45,13 @@ int main(int argc, char** argv)
   pangolin::Var<bool>           ui_show_vo_path("ui.Show VO Path", true, true);
   pangolin::Var<bool>           ui_show_ba_path("ui.Show BA Path", false, true);
   pangolin::Var<bool>           ui_show_ba_rel_path("ui.Show BA Rel Path", true, true);
-  pangolin::Var<bool>           ui_show_ba_win_path("ui.Show BA Win Path", false, true);
   pangolin::Var<bool>           ui_show_gt_path("ui.Show GT Path", true, true);
 
   // Set up container.
   pangolin::View& container = pangolin::CreateDisplay();
-  container.SetBounds(0, 1, pangolin::Attach::Pix(panel_size), 0.75);
+  container.SetBounds(0, 1, pangolin::Attach::Pix(panel_size), 1);
   container.SetLayout(pangolin::LayoutEqual);
   pangolin::DisplayBase().AddDisplay(container);
-
-  // Set up timer.
-  Timer     timer;
-  TimerView timer_view;
-  timer_view.SetBounds(0.5, 1, 0.75, 1.0);
-  pangolin::DisplayBase().AddDisplay(timer_view);
-  timer_view.InitReset();
 
   // Set up 3D view for container.
   SceneGraph::GLSceneGraph gl_graph;
@@ -65,21 +61,11 @@ int main(int argc, char** argv)
   glClearColor(0, 0, 0, 1);
 
   // Add path.
-  GLPathAbs gl_path_vo;
-  GLPathAbs gl_path_ba;
-  GLPathAbs gl_path_ba_rel;
-  gl_path_vo.SetPoseDisplay(5);
-  gl_path_ba.SetPoseDisplay(5);
-  gl_path_ba_rel.SetPoseDisplay(5);
-  gl_path_vo.SetLineColor(1.0, 0, 1.0);
-  gl_path_ba.SetLineColor(0, 1.0, 0);
-  gl_path_ba_rel.SetLineColor(0, 1.0, 1.0);
-  gl_graph.AddChild(&gl_path_vo);
-  gl_graph.AddChild(&gl_path_ba);
-  gl_graph.AddChild(&gl_path_ba_rel);
-  std::vector<Sophus::SE3d>& path_vo_vec = gl_path_vo.GetPathRef();
-  std::vector<Sophus::SE3d>& path_ba_vec = gl_path_ba.GetPathRef();
-  std::vector<Sophus::SE3d>& path_ba_rel_vec = gl_path_ba_rel.GetPathRef();
+  GLPathAbs gl_path_gt;
+  gl_path_gt.SetPoseDisplay(5);
+  gl_path_gt.SetLineColor(0, 0, 1.0);
+  gl_graph.AddChild(&gl_path_gt);
+  std::vector<Sophus::SE3d>& path_gt_vec = gl_path_gt.GetPathRef();
 
   // Add grid.
   SceneGraph::GLGrid gl_grid(150, 1);
@@ -94,14 +80,6 @@ int main(int argc, char** argv)
 
   view_3d.SetHandler(new SceneGraph::HandlerSceneGraph(gl_graph, stacks3d))
       .SetDrawFunction(SceneGraph::ActivateDrawFunctor(gl_graph, stacks3d));
-
-  // Add all subviews to container.
-  SceneGraph::ImageView image_view;
-  image_view.SetAspect(640.0 / 480.0);
-  container.AddDisplay(image_view);
-
-  SceneGraph::ImageView depth_view;
-  container.AddDisplay(depth_view);
 
   container.AddDisplay(view_3d);
 
@@ -148,31 +126,10 @@ int main(int argc, char** argv)
 
         Sophus::SE3d T(SceneGraph::GLCart2T(pose));
 
-        // Flag to load poses as a particular convention.
-        if (cl_args.search("-V")) {
-          // Vision convention.
-          poses.push_back(T);
-        } else if (cl_args.search("-C")) {
-          // Custom setting.
-          pose(0) *= -1;
-          pose(2) *= -1;
-          Sophus::SE3d Tt(SceneGraph::GLCart2T(pose));
-          poses.push_back(calibu::ToCoordinateConvention(Tt,
-                                                         calibu::RdfRobotics));
-        } else if (cl_args.search("-T")) {
-          // Tsukuba convention.
-          Eigen::Matrix3d tsukuba_convention;
-          tsukuba_convention << -1,  0,  0,
-                                 0, -1,  0,
-                                 0,  0, -1;
-          Sophus::SO3d tsukuba_convention_sophus(tsukuba_convention);
-          poses.push_back(calibu::ToCoordinateConvention(T,
-                                          tsukuba_convention_sophus.inverse()));
-        } else {
-          // Robotics convention (default).
-          poses.push_back(calibu::ToCoordinateConvention(T,
-                                          calibu::RdfRobotics));
-        }
+        // Robotics convention (default).
+        poses.push_back(calibu::ToCoordinateConvention(T,
+                                        calibu::RdfRobotics));
+
       }
       std::cout << "- NOTE: " << poses.size() << " poses loaded." << std::endl;
       fclose(fd);
@@ -190,7 +147,6 @@ int main(int argc, char** argv)
     } else {
       container.SetBounds(0, 1, 0, 1);
     }
-    timer_view.Show(fullscreen);
     pangolin::Display("ui").Show(fullscreen);
   });
 
@@ -228,18 +184,11 @@ int main(int argc, char** argv)
   ///
   while (!pangolin::ShouldQuit()) {
 
-    // Start timer.
-    timer.Tic();
-
     ///----- Init reset ...
     if (pangolin::Pushed(ui_reset)) {
-      // Reset timer and analytics.
-      timer_view.InitReset();
 
       // Reset GUI path.
-      path_vo_vec.clear();
-      path_ba_vec.clear();
-      path_ba_rel_vec.clear();
+      path_gt_vec.clear();
 
       // Reset frame counter.
       frame_index = 0;
@@ -248,9 +197,12 @@ int main(int argc, char** argv)
       vo_pose = Sophus::SE3d();
       ba_global_pose = Sophus::SE3d();
       ba_accum_rel_pose = Sophus::SE3d();
-      path_vo_vec.push_back(vo_pose);
-      path_ba_vec.push_back(ba_global_pose);
-      path_ba_rel_vec.push_back(ba_accum_rel_pose);
+      if (have_gt) {
+        for (int jj=0 ; jj<(int)poses.size() ; jj++ )
+          path_gt_vec.push_back(poses[jj]);
+        std::cout << "have_gt is true" << std::endl;
+      }
+      frame_index++;
 
     }
 
@@ -263,18 +215,12 @@ int main(int argc, char** argv)
       stacks3d.Follow(ba_accum_rel_pose.matrix());
     }
 
-    gl_path_vo.SetVisible(ui_show_vo_path);
-    gl_path_ba.SetVisible(ui_show_ba_path);
-    gl_path_ba_rel.SetVisible(ui_show_ba_rel_path);
+    gl_path_gt.SetVisible(true);
 
     // Sleep a bit if paused.
     if (paused) {
       usleep(1e6/60.0);
     }
-
-    // Stop timer and update.
-    timer.Toc();
-    timer_view.Update(10, timer.GetNames(3), timer.GetTimes(3));
 
     pangolin::FinishFrame();
   }
