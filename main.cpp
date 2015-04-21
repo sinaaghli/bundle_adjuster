@@ -235,8 +235,8 @@ bool use_cerese_ba = true;
       frame_index++;
 #endif
       //////////////////////////////////////////////////////////////////////////
-      ///  ADD YOUR CODE HERE !!!
-      ///
+      ///  ADD YOUR CODE FROM HERE !!!
+      //////////////////////////////////////////////////////////////////////////
 
       if (use_cerese_ba) {
         std::cout << "local ba implementation is being called" << std::endl;
@@ -245,6 +245,8 @@ bool use_cerese_ba = true;
         std::cout << "local ba implementation is being called" << std::endl;
         //return 0;
       }
+      //////////////////////////////////////////////////////////////////////////
+      ///  TO HERE !!!
       //////////////////////////////////////////////////////////////////////////
 #ifdef WITH_GUI
     }
