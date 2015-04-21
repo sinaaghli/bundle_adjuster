@@ -6,6 +6,7 @@
 #include <deque>
 #include <fstream>
 #include "BALProblem.h"
+#include <opencv2/opencv.hpp>
 
 #ifdef WITH_GUI
   #include <pangolin/pangolin.h>
@@ -16,7 +17,6 @@
   #include "GLPathAbs.h"
   #include <Eigen/Eigen>
   #include <sophus/sophus.hpp>
-  #include <opencv2/opencv.hpp>
   #include <calibu/Calibu.h>
   #include <HAL/Utils/GetPot>
   #include <HAL/Camera/CameraDevice.h>
@@ -233,22 +233,24 @@ bool use_cerese_ba = true;
         std::cout << "have_gt is true" << std::endl;
       }
       frame_index++;
+      if(!cl_args.search("-poses")) {
 #endif
-      //////////////////////////////////////////////////////////////////////////
-      ///  ADD YOUR CODE FROM HERE !!!
-      //////////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////
+        ///  ADD YOUR CODE FROM HERE !!!
+        //////////////////////////////////////////////////////////////////////////
 
-      if (use_cerese_ba) {
-        std::cout << "ceres ba implementation is being called" << std::endl;
-        SolveBaProblem("../test_ceres_250_b.txt");
-      } else {
-        std::cout << "local ba implementation is being called" << std::endl;
-        //return 0;
-      }
-      //////////////////////////////////////////////////////////////////////////
-      ///  TO HERE !!!
-      //////////////////////////////////////////////////////////////////////////
+        if (use_cerese_ba) {
+          std::cout << "ceres ba implementation is being called" << std::endl;
+          SolveBaProblem("../test_ceres_250_b.txt");
+        } else {
+          std::cout << "local ba implementation is being called" << std::endl;
+          //return 0;
+        }
+        //////////////////////////////////////////////////////////////////////////
+        ///  TO HERE !!!
+        //////////////////////////////////////////////////////////////////////////
 #ifdef WITH_GUI
+      }
     }
     ////////////////////////////////////////////////////////////////////////////
     ///---- Render
