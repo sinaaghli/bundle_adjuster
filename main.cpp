@@ -239,8 +239,8 @@ bool use_cerese_ba = true;
       //////////////////////////////////////////////////////////////////////////
 
       if (use_cerese_ba) {
-        std::cout << "local ba implementation is being called" << std::endl;
-        SolveBaProblem("/Users/Sina/rpg/classproject/bundle_adjuster/test_ceres_250_b.txt");
+        std::cout << "ceres ba implementation is being called" << std::endl;
+        SolveBaProblem("../test_ceres_250_b.txt");
       } else {
         std::cout << "local ba implementation is being called" << std::endl;
         //return 0;

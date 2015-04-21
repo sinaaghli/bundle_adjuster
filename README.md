@@ -33,4 +33,3 @@ This library gives a batch solution of bundle adjustment problem given a set of 
 * ///  ADD YOUR CODE FROM HERE !!!
 * ///  TO HERE !!!
 
-- if you are using the code with the option (WITH_GUI=OFF) you need to change the path of dataset in the code to its path in your system.
