@@ -7,47 +7,56 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 # Default flags.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -Wall -Wextra")
 
-find_package(Eigen3 REQUIRED)
-find_package(Sophus REQUIRED)
-find_package(OpenCV2 REQUIRED)
-find_package(HAL 0.1 REQUIRED)
-find_package(Pangolin 0.1 REQUIRED)
-find_package(SceneGraph 0.1 REQUIRED)
-find_package(Calibu 0.1 REQUIRED)
+option(WITH_GUI "Enable in order to build GUI" OFF)
+
 find_package(Ceres REQUIRED)
-
 include_directories(${CERES_INCLUDE_DIRS})
-include_directories(${EIGEN3_INCLUDE_DIR})
-include_directories(${HAL_INCLUDE_DIRS})
-include_directories(${Sophus_INCLUDE_DIR})
-include_directories(${OpenCV2_INCLUDE_DIR})
-include_directories(${Pangolin_INCLUDE_DIRS})
-include_directories(${SceneGraph_INCLUDE_DIRS})
-include_directories(${Calibu_INCLUDE_DIRS})
 
-link_directories(${Pangolin_LIBRARY_DIRS})
+set( HDRS  BALProblem.h )
+set( SRCS  main.cpp )
 
-set(HDRS
-        AnalyticsView.h
-        ColorPalette.h
-        GLVarHistory.h
-        TimerView.h
-        BALProblem.h
-   )
+if(WITH_GUI)
+    find_package(Eigen3 REQUIRED)
+    find_package(Sophus REQUIRED)
+    find_package(OpenCV2 REQUIRED)
+    find_package(HAL 0.1 REQUIRED)
+    find_package(Pangolin 0.1 REQUIRED)
+    find_package(SceneGraph 0.1 REQUIRED)
+    find_package(Calibu 0.1 REQUIRED)
 
-set(SRCS
-        AnalyticsView.cpp
-        ColorPalette.cpp
-   )
+    include_directories(${EIGEN3_INCLUDE_DIR})
+    include_directories(${HAL_INCLUDE_DIRS})
+    include_directories(${Sophus_INCLUDE_DIR})
+    include_directories(${OpenCV2_INCLUDE_DIR})
+    include_directories(${Pangolin_INCLUDE_DIRS})
+    include_directories(${SceneGraph_INCLUDE_DIRS})
+    include_directories(${Calibu_INCLUDE_DIRS})
 
-list(APPEND HDRS )
-list(APPEND SRCS main.cpp)
+    link_directories(${Pangolin_LIBRARY_DIRS})
+
+    list(APPEND
+            HDRS
+            AnalyticsView.h
+            ColorPalette.h
+            GLVarHistory.h
+            TimerView.h
+            )
+    list(APPEND
+            SRCS
+            AnalyticsView.cpp
+            ColorPalette.cpp
+            )
+
+    add_definitions(-DWITH_GUI)
+endif()
 
 add_executable(bundle_adjuster ${HDRS} ${SRCS})
 
-target_link_libraries(bundle_adjuster ${HAL_LIBRARIES})
-target_link_libraries(bundle_adjuster ${OpenCV2_LIBRARIES})
-target_link_libraries(bundle_adjuster ${Pangolin_LIBRARIES})
-target_link_libraries(bundle_adjuster ${SceneGraph_LIBRARIES})
-target_link_libraries(bundle_adjuster ${Calibu_LIBRARIES})
 target_link_libraries(bundle_adjuster ${CERES_LIBRARIES})
+if(WITH_GUI)
+    target_link_libraries(bundle_adjuster ${HAL_LIBRARIES})
+    target_link_libraries(bundle_adjuster ${OpenCV2_LIBRARIES})
+    target_link_libraries(bundle_adjuster ${Pangolin_LIBRARIES})
+    target_link_libraries(bundle_adjuster ${SceneGraph_LIBRARIES})
+    target_link_libraries(bundle_adjuster ${Calibu_LIBRARIES})
+endif()

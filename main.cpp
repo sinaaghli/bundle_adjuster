@@ -5,35 +5,62 @@
 #include <unistd.h>
 #include <deque>
 #include <fstream>
-
-#include <Eigen/Eigen>
-#include <sophus/sophus.hpp>
-
-#include <opencv2/opencv.hpp>
-
-#include <calibu/Calibu.h>
-#include <HAL/Utils/GetPot>
-#include <HAL/Camera/CameraDevice.h>
-#include <HAL/IMU/IMUDevice.h>
-
-#include <pangolin/pangolin.h>
-#include <SceneGraph/SceneGraph.h>
-
-#include "AnalyticsView.h"
-#include "Timer.h"
-#include "TimerView.h"
-#include "GLPathRel.h"
-#include "GLPathAbs.h"
-
 #include "BALProblem.h"
 
-std::deque<std::tuple<Eigen::Vector3d, Eigen::Vector3d, double> > filter;
+#ifdef WITH_GUI
+  #include <pangolin/pangolin.h>
+  #include <SceneGraph/SceneGraph.h>
+  #include "Timer.h"
+  #include "TimerView.h"
+  #include "GLPathRel.h"
+  #include "GLPathAbs.h"
+  #include <Eigen/Eigen>
+  #include <sophus/sophus.hpp>
+  #include <opencv2/opencv.hpp>
+  #include <calibu/Calibu.h>
+  #include <HAL/Utils/GetPot>
+  #include <HAL/Camera/CameraDevice.h>
+  #include <HAL/IMU/IMUDevice.h>
+#endif
+
+int SolveBaProblem(std::string bal_file) {
+  BALProblem bal_problem;
+  if (!bal_problem.LoadFile(bal_file.c_str())) {
+    std::cerr << "ERROR: unable to open file" << bal_file.c_str()
+              << std::endl;
+    return 0;
+  }
+  const double* observations = bal_problem.observations();
+
+  ceres::Problem problem;
+  for (int ii = 0; ii < bal_problem.num_observations(); ++ii) {
+    ceres::CostFunction* cost_function = SnavelyReprojectionError::Create(
+        observations[2 * ii + 0], observations[2 * ii + 1]);
+    problem.AddResidualBlock(
+        cost_function, NULL,
+        bal_problem.mutable_camera_for_observation(ii),
+        bal_problem.mutable_point_for_observation(ii));
+  }
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_SCHUR;
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations = 100;
+
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+  std::cout << summary.FullReport() << std::endl;
+  return 0;
+}
 
 int main(int argc, char** argv) {
-  std::cout << "Starting bundle_adjuster ..." << std::endl;
+
+bool use_cerese_ba = true;
+
+#ifdef WITH_GUI
+  std::deque<std::tuple<Eigen::Vector3d, Eigen::Vector3d, double> > filter;
 
   GetPot cl_args(argc, argv);
-  // int frame_skip  = cl_args.follow(0, "-skip");
+  std::cout << "Starting bundle_adjuster ..." << std::endl;
 
   ///----- Set up GUI.
   pangolin::CreateGlutWindowAndBind("bundle_adjuster", 1600, 800);
@@ -187,7 +214,6 @@ int main(int argc, char** argv) {
   /////////////////////////////////////////////////////////////////////////////
   ///---- MAIN LOOP
   ///
-  bool use_cerese_ba = true;
   while (!pangolin::ShouldQuit()) {
     ///----- Init reset ...
     if (pangolin::Pushed(ui_reset)) {
@@ -207,44 +233,21 @@ int main(int argc, char** argv) {
         std::cout << "have_gt is true" << std::endl;
       }
       frame_index++;
-
+#endif
       //////////////////////////////////////////////////////////////////////////
-      ///---- Solve BA Problem
+      ///  ADD YOUR CODE HERE !!!
+      ///
+
       if (use_cerese_ba) {
-        BALProblem bal_problem;
-        std::string bal_file = cl_args.follow("", "-dataset");
-        if (!bal_problem.LoadFile(bal_file.c_str())) {
-          std::cerr << "ERROR: unable to open file" << bal_file.c_str()
-                    << std::endl;
-          return 0;
-        }
-        const double* observations = bal_problem.observations();
-
-        ceres::Problem problem;
-        for (int ii = 0; ii < bal_problem.num_observations(); ++ii) {
-          ceres::CostFunction* cost_function = SnavelyReprojectionError::Create(
-              observations[2 * ii + 0], observations[2 * ii + 1]);
-          problem.AddResidualBlock(
-              cost_function, NULL,
-              bal_problem.mutable_camera_for_observation(ii),
-              bal_problem.mutable_point_for_observation(ii));
-        }
-        ceres::Solver::Options options;
-        options.linear_solver_type = ceres::DENSE_SCHUR;
-        options.minimizer_progress_to_stdout = true;
-
-        ceres::Solver::Summary summary;
-        ceres::Solve(options, &problem, &summary);
-        std::cout << summary.FullReport() << std::endl;
-
-        return 0;
-
+        std::cout << "local ba implementation is being called" << std::endl;
+        SolveBaProblem("/Users/Sina/rpg/classproject/bundle_adjuster/test_ceres_250_b.txt");
       } else {
-        std::cerr << "local ba implementation is being called" << std::endl;
-        return 0;
+        std::cout << "local ba implementation is being called" << std::endl;
+        //return 0;
       }
+      //////////////////////////////////////////////////////////////////////////
+#ifdef WITH_GUI
     }
-
     ////////////////////////////////////////////////////////////////////////////
     ///---- Render
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -262,6 +265,8 @@ int main(int argc, char** argv) {
 
     pangolin::FinishFrame();
   }
+
+#endif
 
   return 0;
 }
