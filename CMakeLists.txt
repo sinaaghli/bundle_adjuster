@@ -51,7 +51,9 @@ if(WITH_GUI)
 endif()
 
 add_executable(bundle_adjuster ${HDRS} ${SRCS})
+add_executable(SIFT_FlannMatcher SIFT_FlannMatcher.cpp)
 
+target_link_libraries(SIFT_FlannMatcher ${CERES_LIBRARIES} ${OpenCV2_LIBRARIES})
 target_link_libraries(bundle_adjuster ${CERES_LIBRARIES})
 if(WITH_GUI)
     target_link_libraries(bundle_adjuster ${HAL_LIBRARIES})
