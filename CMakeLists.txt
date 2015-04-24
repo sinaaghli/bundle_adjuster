@@ -34,18 +34,8 @@ if(WITH_GUI)
 
     link_directories(${Pangolin_LIBRARY_DIRS})
 
-    list(APPEND
-            HDRS
-            AnalyticsView.h
-            ColorPalette.h
-            GLVarHistory.h
-            TimerView.h
-            )
-    list(APPEND
-            SRCS
-            AnalyticsView.cpp
-            ColorPalette.cpp
-            )
+    list(APPEND HDRS )
+    list(APPEND SRCS )
 
     add_definitions(-DWITH_GUI)
 endif()

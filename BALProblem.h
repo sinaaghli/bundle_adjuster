@@ -38,6 +38,8 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <math.h>
+#include <Eigen/Dense>
 
 #include "ceres/ceres.h"
 #include "ceres/rotation.h"
@@ -52,10 +54,10 @@ class BALProblem {
     delete[] parameters_;
   }
 
-  int num_observations()       const { return num_observations_;               }
-  const double* observations() const { return observations_;                   }
-  double* mutable_cameras()          { return parameters_;                     }
-  double* mutable_points()           { return parameters_  + 9 * num_cameras_; }
+  int num_observations() const { return num_observations_; }
+  const double* observations() const { return observations_; }
+  double* mutable_cameras() { return parameters_; }
+  double* mutable_points() { return parameters_ + 9 * num_cameras_; }
 
   double* mutable_camera_for_observation(int i) {
     return mutable_cameras() + camera_index_[i] * 9;
@@ -85,7 +87,7 @@ class BALProblem {
       FscanfOrDie(fptr, "%d", camera_index_ + i);
       FscanfOrDie(fptr, "%d", point_index_ + i);
       for (int j = 0; j < 2; ++j) {
-        FscanfOrDie(fptr, "%lf", observations_ + 2*i + j);
+        FscanfOrDie(fptr, "%lf", observations_ + 2 * i + j);
       }
     }
 
@@ -96,8 +98,8 @@ class BALProblem {
   }
 
  private:
-  template<typename T>
-  void FscanfOrDie(FILE *fptr, const char *format, T *value) {
+  template <typename T>
+  void FscanfOrDie(FILE* fptr, const char* format, T* value) {
     int num_scanned = fscanf(fptr, format, value);
     if (num_scanned != 1) {
       LOG(FATAL) << "Invalid UW data file.";
@@ -124,8 +126,7 @@ struct SnavelyReprojectionError {
       : observed_x(observed_x), observed_y(observed_y) {}
 
   template <typename T>
-  bool operator()(const T* const camera,
-                  const T* const point,
+  bool operator()(const T* const camera, const T* const point,
                   T* residuals) const {
     // camera[0,1,2] are the angle-axis rotation.
     T p[3];
@@ -139,14 +140,14 @@ struct SnavelyReprojectionError {
     // Compute the center of distortion. The sign change comes from
     // the camera model that Noah Snavely's Bundler assumes, whereby
     // the camera coordinate system has a negative z axis.
-    T xp = - p[0] / p[2];
-    T yp = - p[1] / p[2];
+    T xp = -p[0] / p[2];
+    T yp = -p[1] / p[2];
 
     // Apply second and fourth order radial distortion.
     const T& l1 = camera[7];
     const T& l2 = camera[8];
-    T r2 = xp*xp + yp*yp;
-    T distortion = T(1.0) + r2  * (l1 + l2  * r2);
+    T r2 = xp * xp + yp * yp;
+    T distortion = T(1.0) + r2 * (l1 + l2 * r2);
 
     // Compute final projected point position.
     const T& focal = camera[6];
@@ -165,7 +166,7 @@ struct SnavelyReprojectionError {
   static ceres::CostFunction* Create(const double observed_x,
                                      const double observed_y) {
     return (new ceres::AutoDiffCostFunction<SnavelyReprojectionError, 2, 9, 3>(
-                new SnavelyReprojectionError(observed_x, observed_y)));
+        new SnavelyReprojectionError(observed_x, observed_y)));
   }
 
   double observed_x;
