@@ -7,28 +7,33 @@
 #include <fstream>
 #include <vector>
 #include "BALProblem.h"
+#include "PoseLandmarkContainer.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/nonfree/features2d.hpp>
+#include <Eigen/Dense>
 #ifdef WITH_GUI
-  #include <pangolin/pangolin.h>
-  #include <SceneGraph/SceneGraph.h>
-  #include "Timer.h"
-  #include "TimerView.h"
-  #include "GLPathRel.h"
-  #include "GLPathAbs.h"
-  #include <Eigen/Eigen>
-  #include <sophus/sophus.hpp>
-  #include <calibu/Calibu.h>
-  #include <HAL/Utils/GetPot>
-  #include <HAL/Camera/CameraDevice.h>
-  #include <HAL/IMU/IMUDevice.h>
+#include <pangolin/pangolin.h>
+#include <SceneGraph/SceneGraph.h>
+#include "Timer.h"
+#include "TimerView.h"
+#include "GLPathRel.h"
+#include "GLPathAbs.h"
+#include <Eigen/Eigen>
+#include <sophus/sophus.hpp>
+#include <calibu/Calibu.h>
+#include <HAL/Utils/GetPot>
+#include <HAL/Camera/CameraDevice.h>
+#include <HAL/IMU/IMUDevice.h>
+#include <calibu/cam/camera_crtp.h>
 #endif
 
-void DrawLandmarkCorrespondance(cv::Mat& left_img, const cv::Point left_lm,
-                               cv::Mat& right_img, const cv::Point& right_lm) {
+void DrawStereoLandmarkCorrespondance(cv::Mat& left_img,
+                                      const cv::Point left_lm,
+                                      cv::Mat& right_img,
+                                      const cv::Point& right_lm) {
   const int gap_btw_images = 5;
   cv::Point tmp_p;
   tmp_p.x = right_lm.x + 640 + gap_btw_images;
@@ -39,33 +44,41 @@ void DrawLandmarkCorrespondance(cv::Mat& left_img, const cv::Point left_lm,
   cv::line(right_img, tmp_p, right_lm, cv::Scalar(0, 255, 0), 1);
 }
 
-bool FindAndDrawMatches(cv::Mat& left_img, cv::Mat& right_img) {
+void DrawTemporalLandmarkCorrespondance(cv::Mat& curr_img,
+                                        const cv::Point curr_lm,
+                                        const cv::Point prev_lm) {
+  cv::circle(curr_img, curr_lm, 5, cv::Scalar(0, 0, 255), 1);
+  cv::line(curr_img, prev_lm, curr_lm, cv::Scalar(0, 0, 255), 1);
+}
 
+bool FindAndDrawMatches(cv::Mat& image_1, cv::Mat& image_2,
+                        const bool is_stereo) {
   //-- Step 1: Detect the keypoints using SIFT Detector
   int minHessian = 400;
-  cv::SiftFeatureDetector detector( minHessian );
-  std::vector<cv::KeyPoint> keypoints_left, keypoints_right;
-  detector.detect( left_img, keypoints_left );
-  detector.detect( right_img, keypoints_right );
+  cv::SiftFeatureDetector detector(minHessian);
+  std::vector<cv::KeyPoint> keypoints_1, keypoints_2;
+  detector.detect(image_1, keypoints_1);
+  detector.detect(image_2, keypoints_2);
 
   //-- Step 2: Calculate descriptors (feature vectors)
   cv::SiftDescriptorExtractor extractor;
-  cv::Mat descriptors_left, descriptors_right;
-  extractor.compute( left_img, keypoints_left, descriptors_left );
-  extractor.compute( right_img, keypoints_right, descriptors_right );
+  cv::Mat descriptors_1, descriptors_2;
+  extractor.compute(image_1, keypoints_1, descriptors_1);
+  extractor.compute(image_2, keypoints_2, descriptors_2);
 
   //-- Step 3: Matching descriptor vectors using FLANN matcher
   // TODO(sina) what is flann matcher
   cv::FlannBasedMatcher matcher;
-  std::vector< cv::DMatch > matches;
-  matcher.match( descriptors_left, descriptors_right, matches );
-  double max_dist = 0; double min_dist = 100;
+  std::vector<cv::DMatch> matches;
+  matcher.match(descriptors_1, descriptors_2, matches);
+  double max_dist = 0;
+  double min_dist = 100;
 
   //-- Quick calculation of max and min distances between keypoints
-  for (int i = 0; i < descriptors_left.rows; i++) {
+  for (int i = 0; i < descriptors_1.rows; i++) {
     double dist = matches[i].distance;
-    if( dist < min_dist ) min_dist = dist;
-    if( dist > max_dist ) max_dist = dist;
+    if (dist < min_dist) min_dist = dist;
+    if (dist > max_dist) max_dist = dist;
   }
   std::cout << "Max distance is: " << max_dist << std::endl;
   std::cout << "Min distance is: " << min_dist << std::endl;
@@ -74,27 +87,34 @@ bool FindAndDrawMatches(cv::Mat& left_img, cv::Mat& right_img) {
   //-- or a small arbitary value ( 0.02 ) in the event that min_dist is very
   //-- small)
   //-- PS.- radiusMatch can also be used here.
-  std::vector< cv::DMatch > good_matches;
-  for (int i = 0; i < descriptors_left.rows; i++) {
-    if (matches[i].distance <= cv::max(5*min_dist, 0.02)) {
-      good_matches.push_back( matches[i]);
+  std::vector<cv::DMatch> good_matches;
+  for (int i = 0; i < descriptors_1.rows; i++) {
+    if (matches[i].distance <= cv::max(2 * min_dist, 0.02)) {
+      good_matches.push_back(matches[i]);
     }
   }
-  std::cout << "Number of good matches in frame: " << good_matches.size() << std::endl;
+  std::cout << "Number of good matches in frame: " << good_matches.size()
+            << std::endl;
 
   //-- Draw only "good" matches
-  for (auto it:good_matches) {
-    DrawLandmarkCorrespondance(left_img,keypoints_left[it.queryIdx].pt,right_img,keypoints_right[it.trainIdx].pt);
+  if (is_stereo) {
+    for (auto it : good_matches) {
+      DrawStereoLandmarkCorrespondance(image_1, keypoints_1[it.queryIdx].pt,
+                                       image_2, keypoints_2[it.trainIdx].pt);
+    }
+  } else {
+    for (auto it : good_matches) {
+      DrawTemporalLandmarkCorrespondance(image_1, keypoints_1[it.queryIdx].pt,
+                                         keypoints_2[it.trainIdx].pt);
+    }
   }
-
   return 0;
 }
 
 int SolveBaProblem(std::string bal_file) {
   BALProblem bal_problem;
   if (!bal_problem.LoadFile(bal_file.c_str())) {
-    std::cerr << "ERROR: unable to open file" << bal_file.c_str()
-              << std::endl;
+    std::cerr << "ERROR: unable to open file" << bal_file.c_str() << std::endl;
     return 0;
   }
   const double* observations = bal_problem.observations();
@@ -103,10 +123,9 @@ int SolveBaProblem(std::string bal_file) {
   for (int ii = 0; ii < bal_problem.num_observations(); ++ii) {
     ceres::CostFunction* cost_function = SnavelyReprojectionError::Create(
         observations[2 * ii + 0], observations[2 * ii + 1]);
-    problem.AddResidualBlock(
-        cost_function, NULL,
-        bal_problem.mutable_camera_for_observation(ii),
-        bal_problem.mutable_point_for_observation(ii));
+    problem.AddResidualBlock(cost_function, NULL,
+                             bal_problem.mutable_camera_for_observation(ii),
+                             bal_problem.mutable_point_for_observation(ii));
   }
   ceres::Solver::Options options;
   options.linear_solver_type = ceres::DENSE_SCHUR;
@@ -120,14 +139,28 @@ int SolveBaProblem(std::string bal_file) {
 }
 
 int main(int argc, char** argv) {
-
-bool use_cerese_ba = true;
+  bool use_cerese_ba = true;
 
 #ifdef WITH_GUI
   std::deque<std::tuple<Eigen::Vector3d, Eigen::Vector3d, double> > filter;
 
   GetPot cl_args(argc, argv);
   std::cout << "Starting bundle_adjuster ..." << std::endl;
+  int frame_skip = cl_args.follow(0, "-skip");
+  if (!cl_args.search("-cam")) {
+    std::cerr << "Camera arguments missing!" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  hal::Camera camera(cl_args.follow("", "-cam"));
+  const int image_width = camera.Width();
+  const int image_height = camera.Height();
+  std::cout << "- Image Dimensions: " << image_width << "x" << image_height
+            << std::endl;
+  if (camera.NumChannels() != 2) {
+    std::cerr << "Two images (stereo pair) are required in order to"
+                 " use this program!" << std::endl;
+    exit(EXIT_FAILURE);
+  }
 
   ///----- Set up GUI.
   pangolin::CreateGlutWindowAndBind("bundle_adjuster", 1250, 800);
@@ -154,11 +187,12 @@ bool use_cerese_ba = true;
   glClearColor(0, 0, 0, 1);
 
   // Add path.
-  GLPathAbs gl_path_gt;
-  gl_path_gt.SetPoseDisplay(5);
-  gl_path_gt.SetLineColor(0, 0, 1.0);
-  gl_graph.AddChild(&gl_path_gt);
-  std::vector<Sophus::SE3d>& path_gt_vec = gl_path_gt.GetPathRef();
+  GLPathRel gl_cam_path;
+  gl_cam_path.SetPoseDisplay(0);
+  gl_cam_path.SetLineColor(0, 0, 1.0);
+  gl_graph.AddChild(&gl_cam_path);
+  std::vector<PoseLandmarkContainer>& cam_path_vec = gl_cam_path.GetPathRef();
+  gl_cam_path.SetDrawLandmarkSize(3);
 
   // Add grid.
   SceneGraph::GLGrid gl_grid(100, 1);
@@ -181,28 +215,49 @@ bool use_cerese_ba = true;
   SceneGraph::ImageView right_image_view;
   right_image_view.SetAspect(640.0 / 480.0);
   container.AddDisplay(right_image_view);
-  //Draw line
 
-  pangolin::GlState glstate;
-  glstate.glEnable(GL_LINES);
-  glstate.glLineWidth(1.0f);
+  SceneGraph::ImageView prev_left_image_view;
+  prev_left_image_view.SetAspect(640.0 / 480.0);
+  container.AddDisplay(prev_left_image_view);
 
-//  container.AddDisplay(view_3d);
+  container.AddDisplay(view_3d);
 
   // GUI aux variables.
+  bool capture_flag = false;
   bool paused = true;
   bool step_once = false;
 
+  ///----- Load camera models.
+  calibu::CameraRig rig;
+  rig = calibu::ReadXmlRig(cl_args.follow("","-cmod"));
+  Eigen::Matrix3f K_0 = rig.cameras[0].camera.K().cast<float>();
+//  std::cout << "-- K_0 is: \n" << K_0 << std::endl;
+  Sophus::SE3d T_wc_0(rig.cameras[0].T_wc);
+//  std::cout << "-- T_wc_0:\n" << T_wc_0.matrix3x4() << std::endl;
+  Eigen::Matrix3f K_1 = rig.cameras[1].camera.K().cast<float>();
+//  std::cout << "-- K_1 is: " << std::endl << K_1 << std::endl;
+  Sophus::SE3d T_wc_1 = rig.cameras[1].T_wc;
+//  std::cout << "-- T_wc_11:\n" << T_wc_1.matrix3x4() << std::endl;
+  Eigen::Vector3d diff_T_wc;
+  diff_T_wc = T_wc_0.translation() - T_wc_1.translation();
+  double baseline = diff_T_wc.squaredNorm();
+  std::cout << "- NOTE: Baseline is:" << baseline << std::endl;
+
+  ///----- Aux variables.
+  cv::Mat current_left_image, current_right_image;
+  current_left_image.flags = CV_LOAD_IMAGE_COLOR;
+  current_right_image.flags = CV_LOAD_IMAGE_COLOR;
+
   ///----- Load file of ground truth poses (optional).
-  bool have_gt;
-  std::vector<Sophus::SE3d> poses;
+  bool cam_path_enabled;
+  std::vector<Sophus::SE3d> cam_poses;
   {
     std::string pose_file = cl_args.follow("", "-poses");
     if (pose_file.empty()) {
       std::cerr
           << "- NOTE: No poses file given. Not comparing against ground truth!"
           << std::endl;
-      have_gt = false;
+      cam_path_enabled = false;
       ui_show_gt_path = false;
     } else {
       FILE* fd = fopen(pose_file.c_str(), "r");
@@ -238,12 +293,14 @@ bool use_cerese_ba = true;
 
         Sophus::SE3d T(SceneGraph::GLCart2T(pose));
 
-        // Robotics convention (default).
-        poses.push_back(calibu::ToCoordinateConvention(T, calibu::RdfRobotics));
+        // Vision convention (default).
+        cam_poses.push_back(
+            calibu::ToCoordinateConvention(T, calibu::RdfVision));
       }
-      std::cout << "- NOTE: " << poses.size() << " poses loaded." << std::endl;
+      std::cout << "- NOTE: " << cam_poses.size() << " poses loaded."
+                << std::endl;
       fclose(fd);
-      have_gt = true;
+      cam_path_enabled = true;
     }
   }
 
@@ -289,20 +346,13 @@ bool use_cerese_ba = true;
   Trv.so3() = calibu::RdfRobotics;
   // Sophus::SE3d Tic = rig.t_wc_[0] * Trv;
 
-  //Draw Images
-  cv::Mat img_1 = cv::imread( "/Users/Sina/rpg/classproject/bundle_adjuster/left_1.png", CV_LOAD_IMAGE_COLOR );
-  cv::Mat img_2 = cv::imread( "/Users/Sina/rpg/classproject/bundle_adjuster/left_2.png", CV_LOAD_IMAGE_COLOR );
-  cv::Point p1;
-  p1.x = 200;
-  p1.y = 10;
-  cv::Point p2;
-  p2.x = 400;
-  p2.y = 450;
-//  cv::line(img_1,p1,p2,cv::Scalar(0,255,0),1);
-//  cv::circle(img_1,p1,100,cv::Scalar(255,0,0),5,8,0);
-  FindAndDrawMatches(img_1,img_2);
-  left_image_view.SetImage(img_1.data,img_1.cols,img_1.rows,GL_RGB,GL_RGB,GL_UNSIGNED_BYTE);
-  right_image_view.SetImage(img_2.data,img_2.cols,img_2.rows,GL_RGB,GL_RGB,GL_UNSIGNED_BYTE);
+  ///----- Init general variables.
+
+  // Image holder.
+  std::shared_ptr<pb::ImageArray> images = pb::ImageArray::Create();
+
+  cv::Mat prev_image;
+
   /////////////////////////////////////////////////////////////////////////////
   ///---- MAIN LOOP
   ///
@@ -310,7 +360,7 @@ bool use_cerese_ba = true;
     ///----- Init reset ...
     if (pangolin::Pushed(ui_reset)) {
       // Reset GUI path.
-      path_gt_vec.clear();
+      cam_path_vec.clear();
 
       // Reset frame counter.
       frame_index = 0;
@@ -319,13 +369,66 @@ bool use_cerese_ba = true;
       vo_pose = Sophus::SE3d();
       ba_global_pose = Sophus::SE3d();
       ba_accum_rel_pose = Sophus::SE3d();
-      if (have_gt) {
-        for (int jj = 0; jj < (int)poses.size(); jj++)
-          path_gt_vec.push_back(poses[jj]);
-        std::cout << "have_gt is true" << std::endl;
+
+      if (cam_path_enabled) {
+        PoseLandmarkContainer poselandmark;
+        std::vector<Sophus::Vector4d> temp_landmarks;
+        for (int ii=-2;ii<3;++ii) {
+          for (int jj = -2; jj < 3; ++jj) {
+            Sophus::Vector4d mark(0.2*ii,0.2*jj,0,1);
+            temp_landmarks.push_back(mark);
+          }
+        }
+
+        for (int jj = 0; jj < (int)cam_poses.size(); jj++) {
+          poselandmark.SetPose(cam_poses[jj]);
+          poselandmark.SetLandmark(temp_landmarks);
+          cam_path_vec.push_back(poselandmark);
+        }
+
+//        Eigen::Matrix4d matrix = Eigen::Matrix4d::Identity(4,4);
+//        matrix(0,3) = 1;
+//        Sophus::SE3d tmp(matrix);
+//        Sophus::Vector4d vec(0,0,0,1);
+//        Sophus::Vector4d result;
+//        result = tmp.matrix() * vec;
+
+//        std::cout << "matrix is:\n" << result.data() << std::endl;
+
+
+
+        std::cout << "cam_path_enabled is true" << std::endl;
       }
+
+      // Capture first image.
+      const int first_frames_to_skip = 10;
+      for (size_t ii = 0; ii < first_frames_to_skip; ++ii) {
+        capture_flag = camera.Capture(*images);
+        //        usleep(100);
+      }
+      capture_flag = camera.Capture(*images);
+
+      // Set images.
+      current_left_image = images->at(0)->Mat().clone();
+      current_right_image = images->at(1)->Mat().clone();
+
+      cv::cvtColor(current_left_image, current_left_image, CV_GRAY2RGB);
+      cv::cvtColor(current_right_image, current_right_image, CV_GRAY2RGB);
+      prev_image = current_left_image.clone();
+      FindAndDrawMatches(current_left_image, current_right_image, true);
+
+      left_image_view.SetImage(current_left_image.data, current_left_image.cols,
+                               current_left_image.rows, GL_RGB, GL_RGB,
+                               GL_UNSIGNED_BYTE);
+      right_image_view.SetImage(
+          current_right_image.data, current_right_image.cols,
+          current_right_image.rows, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE);
+      prev_left_image_view.SetImage(prev_image.data, prev_image.cols,
+                                    prev_image.rows, GL_RGB, GL_RGB,
+                                    GL_UNSIGNED_BYTE);
+
       frame_index++;
-      if(!cl_args.search("-poses")) {
+      if (!cl_args.search("-poses") && false) {
 #endif
         //////////////////////////////////////////////////////////////////////////
         ///  ADD YOUR CODE FROM HERE !!!
@@ -336,14 +439,56 @@ bool use_cerese_ba = true;
           SolveBaProblem("../test_ceres_250_b.txt");
         } else {
           std::cout << "local ba implementation is being called" << std::endl;
-          //return 0;
+          // return 0;
         }
-        //////////////////////////////////////////////////////////////////////////
-        ///  TO HERE !!!
-        //////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+///  TO HERE !!!
+//////////////////////////////////////////////////////////////////////////
 #ifdef WITH_GUI
       }
     }
+
+    ///----- Step forward ...
+    if (!paused || pangolin::Pushed(step_once)) {
+      //  Capture the new image.
+      for (int ii = 0; ii < frame_skip; ++ii) {
+        capture_flag = camera.Capture(*images);
+        //        usleep(100);
+      }
+      capture_flag = camera.Capture(*images);
+
+      if (capture_flag == false) {
+        paused = true;
+      } else {
+        // Set images.
+        current_left_image = images->at(0)->Mat().clone();
+        current_right_image = images->at(1)->Mat().clone();
+        cv::cvtColor(current_left_image, current_left_image, CV_GRAY2RGB);
+        cv::cvtColor(current_right_image, current_right_image, CV_GRAY2RGB);
+
+        FindAndDrawMatches(current_left_image, prev_image, false);
+        FindAndDrawMatches(current_left_image, current_right_image, true);
+        // Clone left image
+        prev_image = images->at(0)->Mat().clone();
+        cv::cvtColor(prev_image, prev_image, CV_GRAY2RGB);
+
+        left_image_view.SetImage(
+            current_left_image.data, current_left_image.cols,
+            current_left_image.rows, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE);
+        right_image_view.SetImage(
+            current_right_image.data, current_right_image.cols,
+            current_right_image.rows, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE);
+        prev_left_image_view.SetImage(prev_image.data, prev_image.cols,
+                                      prev_image.rows, GL_RGB, GL_RGB,
+                                      GL_UNSIGNED_BYTE);
+
+        //        prev_image = current_left_image.clone();
+
+        // Increment frame counter.
+        frame_index++;
+      }
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     ///---- Render
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -352,13 +497,12 @@ bool use_cerese_ba = true;
       stacks3d.Follow(ba_accum_rel_pose.matrix());
     }
 
-    gl_path_gt.SetVisible(true);
+    gl_cam_path.SetVisible(true);
 
     // Sleep a bit if paused.
     if (paused) {
       usleep(1e6 / 60.0);
     }
-
     pangolin::FinishFrame();
   }
 

@@ -14,7 +14,10 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 include_directories(${OpenCV2_INCLUDE_DIR})
 
-set( HDRS  BALProblem.h )
+set( HDRS  BALProblem.h
+           GLPathAbs.h
+           GLPathRel.h
+           PoseLandmarkContainer.h)
 set( SRCS  main.cpp )
 
 if(WITH_GUI)
@@ -24,6 +27,9 @@ if(WITH_GUI)
     find_package(Pangolin 0.1 REQUIRED)
     find_package(SceneGraph 0.1 REQUIRED)
     find_package(Calibu 0.1 REQUIRED)
+    find_package(PbMsgs 0.1 REQUIRED)
+    find_package(Protobuf REQUIRED)
+
 
     include_directories(${EIGEN3_INCLUDE_DIR})
     include_directories(${HAL_INCLUDE_DIRS})
@@ -31,6 +37,9 @@ if(WITH_GUI)
     include_directories(${Pangolin_INCLUDE_DIRS})
     include_directories(${SceneGraph_INCLUDE_DIRS})
     include_directories(${Calibu_INCLUDE_DIRS})
+    include_directories(${PbMsgs_INCLUDE_DIRS})
+    include_directories(${PROTOBUF_INCLUDE_DIRS})
+
 
     link_directories(${Pangolin_LIBRARY_DIRS})
 
@@ -51,4 +60,7 @@ if(WITH_GUI)
     target_link_libraries(bundle_adjuster ${Pangolin_LIBRARIES})
     target_link_libraries(bundle_adjuster ${SceneGraph_LIBRARIES})
     target_link_libraries(bundle_adjuster ${Calibu_LIBRARIES})
+    target_link_libraries(bundle_adjuster ${PbMsgs_LIBRARIES})
+    target_link_libraries(bundle_adjuster ${PROTOBUF_LIBRARIES})
+
 endif()
