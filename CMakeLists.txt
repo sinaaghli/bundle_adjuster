@@ -29,9 +29,11 @@ if(WITH_GUI)
     find_package(Calibu 0.1 REQUIRED)
     find_package(PbMsgs 0.1 REQUIRED)
     find_package(Protobuf REQUIRED)
+    find_package(Kangaroo REQUIRED)
 
 
     include_directories(${EIGEN3_INCLUDE_DIR})
+    include_directories(${Kangaroo_INCLUDE_DIR})
     include_directories(${HAL_INCLUDE_DIRS})
     include_directories(${Sophus_INCLUDE_DIR})
     include_directories(${Pangolin_INCLUDE_DIRS})
@@ -62,5 +64,5 @@ if(WITH_GUI)
     target_link_libraries(bundle_adjuster ${Calibu_LIBRARIES})
     target_link_libraries(bundle_adjuster ${PbMsgs_LIBRARIES})
     target_link_libraries(bundle_adjuster ${PROTOBUF_LIBRARIES})
-
+    target_link_libraries(bundle_adjuster ${Kangaroo_LIBRARIES})
 endif()

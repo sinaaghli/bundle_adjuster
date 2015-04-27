@@ -14,7 +14,6 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/nonfree/features2d.hpp>
 #include <Eigen/Dense>
-#ifdef WITH_GUI
 #include <pangolin/pangolin.h>
 #include <SceneGraph/SceneGraph.h>
 #include "Timer.h"
@@ -28,10 +27,63 @@
 #include <HAL/Camera/CameraDevice.h>
 #include <HAL/IMU/IMUDevice.h>
 #include <calibu/cam/camera_crtp.h>
-#endif
+
+//function p = triangulate(uvl, uvr, Twl, Twr, lcmod, rcmod)
+//    d = uvl(1,:) - uvr(1,:); % disparities
+//    b = norm(Twl(1:3,4) - Twr(1:3,4)); % baseline
+//    f = lcmod.fx; % focal length
+//    p(3,:) = b*f ./ d;
+//    p(1,:) = (uvl(1,:) - lcmod.cx) .* p(3,:) ./ f;
+//    p(2,:) = (uvl(2,:) - lcmod.cy) .* p(3,:) ./ f;
+//    p = Twl * [p;ones(1,size(p,2))];
+//    p = p(1:3,:);
+//end
+
+double g_baseline = 0;
+
+struct DmatchInTimeAndStereo{
+  int queryIdx;
+  int trainIdx_stereo;
+  int trainIdx_temp;
+};
+
+Eigen::Vector4d DepthFromDisparity(const cv::Point& uv, const double& disp,
+                                   Eigen::Matrix3f& K, double minDisp = 0.0f ) {
+  Eigen::Vector4d P;
+  if (disp >= minDisp) {
+    P[2] = K(0,0)/*fu*/ * g_baseline / disp;
+  } else {
+    std::cerr << "Error: disp<minDisp" << std::endl;
+  }
+  // (x,y,1) = kinv * (u,v,1)'
+  P[0] = P[2] * (uv.x-K(0,2)) / K(0,0);
+  P[1] = P[2] * (uv.y-K(1,2)) / K(1,1);
+  P[3] = 1;
+    return P;
+}
+
+void SolveLocalBA(Eigen::Matrix4d& rel_pose,
+                  std::vector<cv::KeyPoint>& keypoints_l_now,
+                  std::vector<cv::KeyPoint>& keypoints_r_now,
+                  std::vector<cv::KeyPoint>& keypoints_l_prev,
+                  std::vector<DmatchInTimeAndStereo> matches,
+                  Eigen::Matrix3f& K_left){
+  std::vector<cv::Point> residual;
+  for (int ii = 0; ii < matches.size(); ++ii) {
+    double disp = keypoints_l_now[matches[ii].queryIdx].pt.x - keypoints_r_now[matches[ii].trainIdx_stereo].pt.x;
+    Eigen::Vector4d point_in_space = DepthFromDisparity(keypoints_l_now[matches[ii].queryIdx].pt, disp,K_left);
+    point_in_space = rel_pose * point_in_space;
+    Eigen::Vector3d pp = calibu::Project(point_in_space);
+    cv::Point pt;
+    pt.x = pp[0];
+    pt.y = pp[1];
+    residual.push_back(keypoints_l_prev[matches[ii].trainIdx_temp].pt);// - pt);
+  }
+
+}
 
 void DrawStereoLandmarkCorrespondance(cv::Mat& left_img,
-                                      const cv::Point left_lm,
+                                      const cv::Point& left_lm,
                                       cv::Mat& right_img,
                                       const cv::Point& right_lm) {
   const int gap_btw_images = 5;
@@ -45,14 +97,16 @@ void DrawStereoLandmarkCorrespondance(cv::Mat& left_img,
 }
 
 void DrawTemporalLandmarkCorrespondance(cv::Mat& curr_img,
-                                        const cv::Point curr_lm,
-                                        const cv::Point prev_lm) {
+                                        const cv::Point& curr_lm,
+                                        const cv::Point& prev_lm) {
   cv::circle(curr_img, curr_lm, 5, cv::Scalar(0, 0, 255), 1);
   cv::line(curr_img, prev_lm, curr_lm, cv::Scalar(0, 0, 255), 1);
 }
 
 bool FindAndDrawMatches(cv::Mat& image_1, cv::Mat& image_2,
-                        const bool is_stereo) {
+                        const bool is_stereo,
+                        Eigen::Matrix3f& K_left,
+                        std::vector<Sophus::Vector4d>& landmarks) {
   //-- Step 1: Detect the keypoints using SIFT Detector
   int minHessian = 400;
   cv::SiftFeatureDetector detector(minHessian);
@@ -89,7 +143,7 @@ bool FindAndDrawMatches(cv::Mat& image_1, cv::Mat& image_2,
   //-- PS.- radiusMatch can also be used here.
   std::vector<cv::DMatch> good_matches;
   for (int i = 0; i < descriptors_1.rows; i++) {
-    if (matches[i].distance <= cv::max(2 * min_dist, 0.02)) {
+    if (matches[i].distance <= cv::max(5 * min_dist, 0.02)) {
       good_matches.push_back(matches[i]);
     }
   }
@@ -101,15 +155,110 @@ bool FindAndDrawMatches(cv::Mat& image_1, cv::Mat& image_2,
     for (auto it : good_matches) {
       DrawStereoLandmarkCorrespondance(image_1, keypoints_1[it.queryIdx].pt,
                                        image_2, keypoints_2[it.trainIdx].pt);
+      double disp = keypoints_1[it.queryIdx].pt.x - keypoints_2[it.trainIdx].pt.x;
+      landmarks.push_back(DepthFromDisparity(keypoints_1[it.queryIdx].pt, disp,
+                          K_left));
     }
   } else {
     for (auto it : good_matches) {
       DrawTemporalLandmarkCorrespondance(image_1, keypoints_1[it.queryIdx].pt,
                                          keypoints_2[it.trainIdx].pt);
+      double disp = keypoints_1[it.queryIdx].pt.x - keypoints_2[it.trainIdx].pt.x;
+      landmarks.push_back(DepthFromDisparity(keypoints_1[it.queryIdx].pt, disp,
+                          K_left));
     }
   }
   return 0;
 }
+
+bool FindAndDrawMatches2(cv::Mat& image_1, cv::Mat& image_2, cv::Mat& prev_img,
+                        const bool is_stereo,
+                        Eigen::Matrix3f& K_left,
+                        std::vector<Sophus::Vector4d>& landmarks,
+                        Sophus::SE3d& cam_rel_transform) {
+  //-- Step 1: Detect the keypoints using SIFT Detector
+  int minHessian = 400;
+  cv::SiftFeatureDetector detector(minHessian);
+  std::vector<cv::KeyPoint> keypoints_1, keypoints_2, keypoints_3;
+  detector.detect(image_1, keypoints_1);
+  detector.detect(image_2, keypoints_2);
+  detector.detect(prev_img, keypoints_3);
+
+  //-- Step 2: Calculate descriptors (feature vectors)
+  cv::SiftDescriptorExtractor extractor;
+  cv::Mat descriptors_1, descriptors_2, descriptors_3;
+  extractor.compute(image_1, keypoints_1, descriptors_1);
+  extractor.compute(image_2, keypoints_2, descriptors_2);
+  extractor.compute(prev_img, keypoints_3, descriptors_3);
+
+  //-- Step 3: Matching descriptor vectors using FLANN matcher
+  // TODO(sina) what is flann matcher
+  cv::FlannBasedMatcher matcher, matcher_temporal;
+  std::vector<cv::DMatch> matches,matches_temporal;
+  matcher.match(descriptors_1, descriptors_2, matches);
+  matcher_temporal.match(descriptors_1,descriptors_3,matches_temporal);
+
+  double max_dist = 0;
+  double min_dist = 100;
+
+  //-- Quick calculation of max and min distances between keypoints
+  for (int i = 0; i < descriptors_1.rows; i++) {
+    double dist = matches[i].distance;
+    if (dist < min_dist) min_dist = dist;
+    if (dist > max_dist) max_dist = dist;
+  }
+  std::cout << "Max distance is: " << max_dist << std::endl;
+  std::cout << "Min distance is: " << min_dist << std::endl;
+
+  //-- Draw only "good" matches (i.e. whose distance is less than 2*min_dist,
+  //-- or a small arbitary value ( 0.02 ) in the event that min_dist is very
+  //-- small)
+  //-- PS.- radiusMatch can also be used here.
+    std::vector<cv::DMatch> good_matches1, good_matches2;
+
+  for (int i = 0; i < descriptors_1.rows; i++) {
+    if (matches[i].distance <= cv::max(4 * min_dist, 0.02)) {
+      good_matches1.push_back(matches[i]);
+    }
+  }
+  for (int i = 0; i < descriptors_1.rows; i++) {
+    if (matches_temporal[i].distance <= cv::max(3 * min_dist, 0.02)) {
+      good_matches2.push_back(matches_temporal[i]);
+    }
+  }
+  std::vector<DmatchInTimeAndStereo> good_matches_final;
+  for (size_t ii = 0; ii < good_matches1.size(); ii++) {
+    for (size_t jj=0; jj<good_matches2.size(); jj++) {
+      if (good_matches1[ii].queryIdx == good_matches2[jj].queryIdx) {
+        DmatchInTimeAndStereo tmp;
+        tmp.queryIdx = good_matches1[ii].queryIdx;
+        tmp.trainIdx_stereo = good_matches1[ii].trainIdx;
+        tmp.trainIdx_temp = good_matches2[jj].trainIdx;
+        good_matches_final.push_back(tmp);
+      }
+    }
+  }
+
+  //-- Draw only "good" matches
+  if (is_stereo) {
+    for (auto& it : good_matches_final) {
+      DrawStereoLandmarkCorrespondance(image_1, keypoints_1[it.queryIdx].pt,
+                                       image_2, keypoints_2[it.trainIdx_stereo].pt);
+      DrawTemporalLandmarkCorrespondance(image_1, keypoints_1[it.queryIdx].pt,
+                                         keypoints_3[it.trainIdx_temp].pt);
+      double disp = keypoints_1[it.queryIdx].pt.x - keypoints_2[it.trainIdx_stereo].pt.x;
+      landmarks.push_back(DepthFromDisparity(keypoints_1[it.queryIdx].pt, disp,
+                          K_left));
+    }
+  }
+
+
+  // Find Camera Transform
+  //SolveLocalBA(Eigen::Matrix4d(cam_rel_transform.matrix()),keypoints_1,keypoints_2,keypoints_3,good_matches_final,K_left);
+
+  return 0;
+}
+
 
 int SolveBaProblem(std::string bal_file) {
   BALProblem bal_problem;
@@ -232,16 +381,17 @@ int main(int argc, char** argv) {
   rig = calibu::ReadXmlRig(cl_args.follow("","-cmod"));
   Eigen::Matrix3f K_0 = rig.cameras[0].camera.K().cast<float>();
 //  std::cout << "-- K_0 is: \n" << K_0 << std::endl;
-  Sophus::SE3d T_wc_0(rig.cameras[0].T_wc);
+  Sophus::SE3d T_wc_0 = rig.cameras[0].T_wc;
 //  std::cout << "-- T_wc_0:\n" << T_wc_0.matrix3x4() << std::endl;
   Eigen::Matrix3f K_1 = rig.cameras[1].camera.K().cast<float>();
 //  std::cout << "-- K_1 is: " << std::endl << K_1 << std::endl;
   Sophus::SE3d T_wc_1 = rig.cameras[1].T_wc;
 //  std::cout << "-- T_wc_11:\n" << T_wc_1.matrix3x4() << std::endl;
-  Eigen::Vector3d diff_T_wc;
-  diff_T_wc = T_wc_0.translation() - T_wc_1.translation();
-  double baseline = diff_T_wc.squaredNorm();
-  std::cout << "- NOTE: Baseline is:" << baseline << std::endl;
+  Sophus::SE3d tmp_se3d;
+  tmp_se3d = T_wc_0.inverse() * T_wc_1;
+  Eigen::Vector3d diff_T_wc(tmp_se3d.translation());
+  g_baseline = diff_T_wc.norm();
+  std::cout << "- NOTE: Baseline is:" << g_baseline << std::endl;
 
   ///----- Aux variables.
   cv::Mat current_left_image, current_right_image;
@@ -343,15 +493,16 @@ int main(int argc, char** argv) {
 
   // IMU-Camera transform through robotic to vision conversion.
   Sophus::SE3d Trv;
-  Trv.so3() = calibu::RdfRobotics;
+  Trv.so3() = calibu::RdfVision;
   // Sophus::SE3d Tic = rig.t_wc_[0] * Trv;
 
   ///----- Init general variables.
 
   // Image holder.
   std::shared_ptr<pb::ImageArray> images = pb::ImageArray::Create();
+  cv::Mat prev_left_image;
 
-  cv::Mat prev_image;
+
 
   /////////////////////////////////////////////////////////////////////////////
   ///---- MAIN LOOP
@@ -371,20 +522,22 @@ int main(int argc, char** argv) {
       ba_accum_rel_pose = Sophus::SE3d();
 
       if (cam_path_enabled) {
-        PoseLandmarkContainer poselandmark;
-        std::vector<Sophus::Vector4d> temp_landmarks;
-        for (int ii=-2;ii<3;++ii) {
-          for (int jj = -2; jj < 3; ++jj) {
-            Sophus::Vector4d mark(0.2*ii,0.2*jj,0,1);
-            temp_landmarks.push_back(mark);
-          }
-        }
+        // Draw test path
+//        PoseLandmarkContainer poselandmark;
+//        std::vector<Sophus::Vector4d> temp_landmarks;
+//        for (int ii=-2;ii<3;++ii) {
+//          for (int jj = -2; jj < 3; ++jj) {
+//            Sophus::Vector4d mark(0.2*ii,0.2*jj,0,1);
+//            temp_landmarks.push_back(mark);
+//          }
+//        }
 
-        for (int jj = 0; jj < (int)cam_poses.size(); jj++) {
-          poselandmark.SetPose(cam_poses[jj]);
-          poselandmark.SetLandmark(temp_landmarks);
-          cam_path_vec.push_back(poselandmark);
-        }
+//        for (int jj = 0; jj < (int)cam_poses.size(); jj++) {
+//          poselandmark.SetPose(cam_poses[jj]);
+//          poselandmark.SetLandmark(temp_landmarks);
+//          cam_path_vec.push_back(poselandmark);
+//        }
+
 
 //        Eigen::Matrix4d matrix = Eigen::Matrix4d::Identity(4,4);
 //        matrix(0,3) = 1;
@@ -401,7 +554,7 @@ int main(int argc, char** argv) {
       }
 
       // Capture first image.
-      const int first_frames_to_skip = 10;
+      const int first_frames_to_skip = 620;
       for (size_t ii = 0; ii < first_frames_to_skip; ++ii) {
         capture_flag = camera.Capture(*images);
         //        usleep(100);
@@ -414,8 +567,20 @@ int main(int argc, char** argv) {
 
       cv::cvtColor(current_left_image, current_left_image, CV_GRAY2RGB);
       cv::cvtColor(current_right_image, current_right_image, CV_GRAY2RGB);
-      prev_image = current_left_image.clone();
-      FindAndDrawMatches(current_left_image, current_right_image, true);
+      prev_left_image = current_left_image.clone();
+
+      // Init cam path
+      PoseLandmarkContainer init_pose_container;
+      Eigen::Matrix4d temp_pose;
+      // Set Init Pose to origin
+      temp_pose.setIdentity();
+      Sophus::SE3d init_pose(temp_pose);
+      std::vector<Sophus::Vector4d> init_landmarks;
+      FindAndDrawMatches(current_left_image, current_right_image, true,
+                         K_0, init_landmarks);
+      init_pose_container.SetPose(init_pose);
+      init_pose_container.SetLandmark(init_landmarks);
+      cam_path_vec.push_back(init_pose_container);
 
       left_image_view.SetImage(current_left_image.data, current_left_image.cols,
                                current_left_image.rows, GL_RGB, GL_RGB,
@@ -423,8 +588,8 @@ int main(int argc, char** argv) {
       right_image_view.SetImage(
           current_right_image.data, current_right_image.cols,
           current_right_image.rows, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE);
-      prev_left_image_view.SetImage(prev_image.data, prev_image.cols,
-                                    prev_image.rows, GL_RGB, GL_RGB,
+      prev_left_image_view.SetImage(prev_left_image.data, prev_left_image.cols,
+                                    prev_left_image.rows, GL_RGB, GL_RGB,
                                     GL_UNSIGNED_BYTE);
 
       frame_index++;
@@ -466,11 +631,28 @@ int main(int argc, char** argv) {
         cv::cvtColor(current_left_image, current_left_image, CV_GRAY2RGB);
         cv::cvtColor(current_right_image, current_right_image, CV_GRAY2RGB);
 
-        FindAndDrawMatches(current_left_image, prev_image, false);
-        FindAndDrawMatches(current_left_image, current_right_image, true);
+        // Init cam path
+        PoseLandmarkContainer init_pose_container;
+        Eigen::Matrix4d temp_pose;
+        // Set Init Pose to origin
+        temp_pose.setIdentity();
+        Sophus::SE3d init_pose(temp_pose);
+        std::vector<Sophus::Vector4d> init_landmarks;
+//        FindAndDrawMatches(current_left_image, current_right_image, true,
+//                           K_0, init_landmarks);
+        FindAndDrawMatches2(current_left_image, current_right_image,
+                            prev_left_image, true, K_0, init_landmarks,init_pose);
+//        LocalBA();
+
+        init_pose_container.SetLandmark(init_landmarks);
+        init_pose_container.SetPose(init_pose);
+        std::cout << "num of landmarks is:" << init_landmarks.size() << std::endl;
+        cam_path_vec[0] = init_pose_container;
+        //cam_path_vec.push_back(init_pose_container);
+
         // Clone left image
-        prev_image = images->at(0)->Mat().clone();
-        cv::cvtColor(prev_image, prev_image, CV_GRAY2RGB);
+        prev_left_image = images->at(0)->Mat().clone();
+        cv::cvtColor(prev_left_image, prev_left_image, CV_GRAY2RGB);
 
         left_image_view.SetImage(
             current_left_image.data, current_left_image.cols,
@@ -478,8 +660,8 @@ int main(int argc, char** argv) {
         right_image_view.SetImage(
             current_right_image.data, current_right_image.cols,
             current_right_image.rows, GL_RGB, GL_RGB, GL_UNSIGNED_BYTE);
-        prev_left_image_view.SetImage(prev_image.data, prev_image.cols,
-                                      prev_image.rows, GL_RGB, GL_RGB,
+        prev_left_image_view.SetImage(prev_left_image.data, prev_left_image.cols,
+                                      prev_left_image.rows, GL_RGB, GL_RGB,
                                       GL_UNSIGNED_BYTE);
 
         //        prev_image = current_left_image.clone();
