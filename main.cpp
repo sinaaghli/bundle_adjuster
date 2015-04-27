@@ -8,12 +8,12 @@
 #include <vector>
 #include "BALProblem.h"
 #include "PoseLandmarkContainer.h"
-#include <calibu/Calibu.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/nonfree/features2d.hpp>
+#include <Eigen/Dense>
 #ifdef WITH_GUI
 #include <pangolin/pangolin.h>
 #include <SceneGraph/SceneGraph.h>
@@ -27,6 +27,7 @@
 #include <HAL/Utils/GetPot>
 #include <HAL/Camera/CameraDevice.h>
 #include <HAL/IMU/IMUDevice.h>
+#include <calibu/cam/camera_crtp.h>
 #endif
 
 void DrawStereoLandmarkCorrespondance(cv::Mat& left_img,
@@ -186,7 +187,7 @@ int main(int argc, char** argv) {
   glClearColor(0, 0, 0, 1);
 
   // Add path.
-  GLPathAbs gl_cam_path;
+  GLPathRel gl_cam_path;
   gl_cam_path.SetPoseDisplay(0);
   gl_cam_path.SetLineColor(0, 0, 1.0);
   gl_graph.AddChild(&gl_cam_path);
@@ -227,24 +228,20 @@ int main(int argc, char** argv) {
   bool step_once = false;
 
   ///----- Load camera models.
-  //  calibu::CameraRig old_rig;
-  //  if (camera.GetDeviceProperty(hal::DeviceDirectory).empty() == false) {
-  //    std::cout<<"- Loaded camera: " <<
-  //               camera.GetDeviceProperty(hal::DeviceDirectory) + '/'
-  //               + cl_args.follow("cameras.xml", "-cmod") << std::endl;
-  //    old_rig =
-  //    calibu::ReadXmlRig(camera.GetDeviceProperty(hal::DeviceDirectory)
-  //                             + '/' + cl_args.follow("cameras.xml",
-  //                             "-cmod"));
-  //  } else {
-  //    old_rig = calibu::ReadXmlRig(cl_args.follow("cameras.xml", "-cmod"));
-  //  }
-  //  Eigen::Matrix3f K = old_rig.cameras[0].camera.K().cast<float>();
-  //  std::cout << "-- K is: " << std::endl << K << std::endl;
-
-  // Convert old rig to new rig.
-  //  calibu::Rig<double> rig;
-  //  calibu::CreateFromOldRig(&old_rig, &rig);
+  calibu::CameraRig rig;
+  rig = calibu::ReadXmlRig(cl_args.follow("","-cmod"));
+  Eigen::Matrix3f K_0 = rig.cameras[0].camera.K().cast<float>();
+//  std::cout << "-- K_0 is: \n" << K_0 << std::endl;
+  Sophus::SE3d T_wc_0(rig.cameras[0].T_wc);
+//  std::cout << "-- T_wc_0:\n" << T_wc_0.matrix3x4() << std::endl;
+  Eigen::Matrix3f K_1 = rig.cameras[1].camera.K().cast<float>();
+//  std::cout << "-- K_1 is: " << std::endl << K_1 << std::endl;
+  Sophus::SE3d T_wc_1 = rig.cameras[1].T_wc;
+//  std::cout << "-- T_wc_11:\n" << T_wc_1.matrix3x4() << std::endl;
+  Eigen::Vector3d diff_T_wc;
+  diff_T_wc = T_wc_0.translation() - T_wc_1.translation();
+  double baseline = diff_T_wc.squaredNorm();
+  std::cout << "- NOTE: Baseline is:" << baseline << std::endl;
 
   ///----- Aux variables.
   cv::Mat current_left_image, current_right_image;
@@ -375,30 +372,28 @@ int main(int argc, char** argv) {
 
       if (cam_path_enabled) {
         PoseLandmarkContainer poselandmark;
-        std::vector<Sophus::Vector3d> temp_landmarks;
-        for (int ii=-3;ii<3;++ii) {
-          for (int jj = -3; jj < 3; ++jj) {
-            Sophus::Vector3d mark(0.3*ii,0.3*jj,0);
+        std::vector<Sophus::Vector4d> temp_landmarks;
+        for (int ii=-2;ii<3;++ii) {
+          for (int jj = -2; jj < 3; ++jj) {
+            Sophus::Vector4d mark(0.2*ii,0.2*jj,0,1);
             temp_landmarks.push_back(mark);
           }
         }
+
         for (int jj = 0; jj < (int)cam_poses.size(); jj++) {
           poselandmark.SetPose(cam_poses[jj]);
           poselandmark.SetLandmark(temp_landmarks);
           cam_path_vec.push_back(poselandmark);
         }
 
+//        Eigen::Matrix4d matrix = Eigen::Matrix4d::Identity(4,4);
+//        matrix(0,3) = 1;
+//        Sophus::SE3d tmp(matrix);
+//        Sophus::Vector4d vec(0,0,0,1);
+//        Sophus::Vector4d result;
+//        result = tmp.matrix() * vec;
 
-
-
-        Eigen::Matrix4d m;
-        Eigen::Translation3d mm;
-        Sophus::SE3d sof;
-
-        m.setIdentity();
-        sof.se
-        m = m *
-
+//        std::cout << "matrix is:\n" << result.data() << std::endl;
 
 
 

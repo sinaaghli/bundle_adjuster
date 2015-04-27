@@ -87,13 +87,15 @@ class GLPathAbs : public SceneGraph::GLObject {
         glColor3f(1.0, 1.0, 0.2);
         for (unsigned int ii = 0; ii < m_vPosesAndLandmarks.size(); ++ii) {
           Sophus::SE3d Pose;
-          std::vector<Sophus::Vector3d> landmarks;
+          std::vector<Sophus::Vector4d> landmarks;
           m_vPosesAndLandmarks[ii].GetPose(Pose);
           m_vPosesAndLandmarks[ii].GetLandmarks(landmarks);
           for (size_t jj = 0; jj < landmarks.size(); ++jj) {
-              glVertex3f(landmarks[jj].data()[0],
-                         landmarks[jj].data()[1],
-                         landmarks[jj].data()[2]);
+            Sophus::Vector4d tmp_vec;
+            tmp_vec = Pose.matrix() * landmarks[jj];
+            glVertex3f(tmp_vec.data()[0],
+                       tmp_vec.data()[1],
+                       tmp_vec.data()[2]);
           }
         }
         glEnd();

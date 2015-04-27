@@ -13,11 +13,11 @@ class PoseLandmarkContainer {
     pose_ = pose;
   }
 
-  void SetLandmark(Sophus::Vector3d& landmark) {
+  void SetLandmark(Sophus::Vector4d& landmark) {
     landmarks_.push_back(landmark);
   }
 
-  void SetLandmark(std::vector<Sophus::Vector3d>& landmark) {
+  void SetLandmark(std::vector<Sophus::Vector4d>& landmark) {
     landmarks_.insert(landmarks_.end(), landmark.begin(), landmark.end());
   }
 
@@ -25,7 +25,7 @@ class PoseLandmarkContainer {
     pose = pose_;
   }
 
-  void GetLandmarks(std::vector<Sophus::Vector3d>& landmark) {
+  void GetLandmarks(std::vector<Sophus::Vector4d>& landmark) {
     landmark = landmarks_;
   }
 
@@ -35,6 +35,6 @@ class PoseLandmarkContainer {
 
  private:
   Sophus::SE3d pose_;
-  std::vector<Sophus::Vector3d> landmarks_;
+  std::vector<Sophus::Vector4d> landmarks_;
 
 };

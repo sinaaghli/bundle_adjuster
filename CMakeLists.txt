@@ -14,7 +14,10 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 include_directories(${OpenCV2_INCLUDE_DIR})
 
-set( HDRS  BALProblem.h PoseLandmarkContainer.h)
+set( HDRS  BALProblem.h
+           GLPathAbs.h
+           GLPathRel.h
+           PoseLandmarkContainer.h)
 set( SRCS  main.cpp )
 
 if(WITH_GUI)
