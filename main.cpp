@@ -177,7 +177,7 @@ bool FindAndDrawMatches2(cv::Mat& image_1, cv::Mat& image_2, cv::Mat& prev_img,
                         std::vector<Sophus::Vector4d>& landmarks,
                         Sophus::SE3d& cam_rel_transform) {
   //-- Step 1: Detect the keypoints using SIFT Detector
-  int minHessian = 400;
+  int minHessian = 1000;
   cv::SiftFeatureDetector detector(minHessian);
   std::vector<cv::KeyPoint> keypoints_1, keypoints_2, keypoints_3;
   detector.detect(image_1, keypoints_1);
@@ -222,7 +222,7 @@ bool FindAndDrawMatches2(cv::Mat& image_1, cv::Mat& image_2, cv::Mat& prev_img,
     }
   }
   for (int i = 0; i < descriptors_1.rows; i++) {
-    if (matches_temporal[i].distance <= cv::max(3 * min_dist, 0.02)) {
+    if (matches_temporal[i].distance <= cv::max(4 * min_dist, 0.02)) {
       good_matches2.push_back(matches_temporal[i]);
     }
   }
@@ -554,7 +554,7 @@ int main(int argc, char** argv) {
       }
 
       // Capture first image.
-      const int first_frames_to_skip = 620;
+      const int first_frames_to_skip = 700;
       for (size_t ii = 0; ii < first_frames_to_skip; ++ii) {
         capture_flag = camera.Capture(*images);
         //        usleep(100);
